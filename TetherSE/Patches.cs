@@ -18,6 +18,6 @@ namespace TetherSE
 
 
 
-        public static float maxUseDistance = 500f;
+        public static float maxUseDistance = 299792458f;
     }
 }

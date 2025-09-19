@@ -14,6 +14,9 @@ using Sandbox.Game.Entities.Inventory;
 using Sandbox.Game.Weapons;
 using VRage.Game;
 using VRageMath;
+using Sandbox.Game.EntityComponents;
+using Sandbox.Game.Entities.Cube;
+using VRage.Input;
 
 namespace TetherSE
 {
@@ -90,24 +93,49 @@ namespace TetherSE
 
         public static void DoGrinder()
         {
-            var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
-            var playerInventory = MySession.Static.LocalCharacter.GetInventory();
-            var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
+            var caster = MySession.Static.LocalCharacter.EquippedTool?.Components?.Get<MyCasterComponent>();
+            var hitSlimBlock = caster?.HitBlock;
 
-            foreach (var item in items)
+            // Only loot if actively grinding
+            if (MyAPIGateway.Input.IsLeftMousePressed() && hitSlimBlock != null && hitSlimBlock.FatBlock is IMyTerminalBlock terminalBlock && terminalBlock.HasInventory)
             {
-                var contentId = item.Content.GetObjectId();
-                if (contentId.TypeId.IsNull) continue;
+                var groundInventory = (MyInventory)terminalBlock.GetInventory();
+                var playerInventory = MySession.Static.LocalCharacter.GetInventory();
+                var items = new List<MyPhysicalInventoryItem>(groundInventory.GetItems());
 
-                var typeIdString = contentId.ToString().ToLower();
+                foreach (var item in items)
+                {
+                    var contentId = item.Content.GetObjectId();
+                    if (contentId.TypeId.IsNull) continue;
 
-                if (!typeIdString.Contains("ore") &&
-                    !typeIdString.Contains("ingot") &&
-                    !typeIdString.Contains("component")) continue;
+                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
+                    MyInventory.TransferByPlanner(groundInventory, playerInventory, contentId, MyItemFlags.None, item.Amount);
+                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
+                }
+            }
 
-                MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
-                MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, item.Amount);
-                MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
+            // Only deposit if holding control
+            if (MyAPIGateway.Input.IsKeyPress(MyKeys.LeftControl) || MyAPIGateway.Input.IsKeyPress(MyKeys.RightControl))
+            {
+                var tetheredInventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
+                var playerInv = MySession.Static.LocalCharacter.GetInventory();
+                var playerItems = new List<MyPhysicalInventoryItem>(playerInv.GetItems());
+
+                foreach (var item in playerItems)
+                {
+                    var contentId = item.Content.GetObjectId();
+                    if (contentId.TypeId.IsNull) continue;
+
+                    var typeIdString = contentId.ToString().ToLower();
+
+                    if (!typeIdString.Contains("ore") &&
+                        !typeIdString.Contains("ingot") &&
+                        !typeIdString.Contains("component")) continue;
+
+                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
+                    MyInventory.TransferByPlanner(playerInv, tetheredInventory, contentId, MyItemFlags.None, item.Amount);
+                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
+                }
             }
         }
         public static void DoDrill()
