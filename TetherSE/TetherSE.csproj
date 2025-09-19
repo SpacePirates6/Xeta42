@@ -92,4 +92,7 @@
     <Compile Include="Tether.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="AfterBuild">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="C:\Users\space\AppData\Roaming\Pulsar\Legacy\Local" />
+  </Target>
 </Project>

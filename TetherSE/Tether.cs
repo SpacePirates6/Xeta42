@@ -15,7 +15,6 @@ using Sandbox.Game.Weapons;
 using VRage.Game;
 using VRageMath;
 
-
 namespace TetherSE
 {
     class Tether
@@ -55,25 +54,29 @@ namespace TetherSE
                 return;
             }
 
-            var equippedTool = MySession.Static.LocalCharacter.HandItemDefinition.Id.SubtypeName;
-            if (equippedTool.Contains("Welder", StringComparison.OrdinalIgnoreCase))
+            var equippedTool = MySession.Static.LocalCharacter.HandItemDefinition;
+            if (equippedTool != null)
             {
-                if (localPlayer.BuildPlanner.Count == 0)
+                var toolName = equippedTool.Id.SubtypeName;
+                if (toolName.Contains("Welder", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (localPlayer.BuildPlanner.Count == 0)
+                    {
+                        return;
+                    }
+                    DoWelder(localPlayer);
                     return;
                 }
-                DoWelder(localPlayer);
-                return;
-            }
-            if (equippedTool.Contains("Grinder", StringComparison.OrdinalIgnoreCase))
-            {
-                DoGrinder();
-                return;
-            }
-            if (equippedTool.Contains("Drill", StringComparison.OrdinalIgnoreCase))
-            {
-                DoDrill();
-                return;
+                if (toolName.Contains("Grinder", StringComparison.OrdinalIgnoreCase))
+                {
+                    DoGrinder();
+                    return;
+                }
+                if (toolName.Contains("Drill", StringComparison.OrdinalIgnoreCase))
+                {
+                    DoDrill();
+                    return;
+                }
             }
         }
 
@@ -88,24 +91,40 @@ namespace TetherSE
         public static void DoGrinder()
         {
             var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
-            foreach (var objectId in MySession.Static.LocalCharacter.GetInventory().GetItems())
+            var playerInventory = MySession.Static.LocalCharacter.GetInventory();
+            var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
+
+            foreach (var item in items)
             {
-                if (!objectId.Content.GetObjectId().ToString().ToLower().Contains("ore") &&
-                    !objectId.Content.GetObjectId().ToString().ToLower().Contains("ingot") &&
-                    !objectId.Content.GetObjectId().ToString().ToLower().Contains("component")) continue;
+                var contentId = item.Content.GetObjectId();
+                if (contentId.TypeId.IsNull) continue;
+
+                var typeIdString = contentId.ToString().ToLower();
+
+                if (!typeIdString.Contains("ore") &&
+                    !typeIdString.Contains("ingot") &&
+                    !typeIdString.Contains("component")) continue;
+
                 MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
-                MyInventory.TransferByPlanner(MySession.Static.LocalCharacter.GetInventory(), inventory, objectId.Content.GetObjectId(), MyItemFlags.None, objectId.Amount);
+                MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, item.Amount);
                 MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
             }
         }
         public static void DoDrill()
         {
             var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
-            foreach (var objectId in MySession.Static.LocalCharacter.GetInventory().GetItems())
+            var playerInventory = MySession.Static.LocalCharacter.GetInventory();
+            var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
+
+            foreach (var item in items)
             {
-                if (!objectId.Content.GetObjectId().ToString().ToLower().Contains("ore")) continue;
+                var contentId = item.Content.GetObjectId();
+                if (contentId.TypeId.IsNull) continue;
+
+                if (!contentId.ToString().ToLower().Contains("ore")) continue;
+
                 MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
-                MyInventory.TransferByPlanner(MySession.Static.LocalCharacter.GetInventory(), inventory, objectId.Content.GetObjectId(), MyItemFlags.None, objectId.Amount);
+                MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, item.Amount);
                 MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
             }
         }
