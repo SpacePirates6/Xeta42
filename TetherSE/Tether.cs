@@ -14,8 +14,8 @@ using Sandbox.Game.Entities.Inventory;
 using Sandbox.Game.Weapons;
 using VRage.Game;
 using VRageMath;
+using VRage;
 using Sandbox.Game.EntityComponents;
-using Sandbox.Game.Entities.Cube;
 using VRage.Input;
 
 namespace TetherSE
@@ -33,7 +33,7 @@ namespace TetherSE
             var localPlayer = MySession.Static.LocalCharacter;
             IMyUtilities utils = MyAPIGateway.Utilities;
 
-            if (ticks < 50)
+            if (ticks < 1)
             {
                 ticks++;
                 return;
@@ -41,45 +41,45 @@ namespace TetherSE
 
             ticks = 0;
 
-
-            if (GetTargetedBlock.selectedBlock == null)
+            if (GetTargetedBlock.selectedBlock != null)
             {
-                return;
-            }
-
-            if (Vector3D.Distance(localPlayer.PositionComp.GetPosition(),
+                if (Vector3D.Distance(localPlayer.PositionComp.GetPosition(),
                     GetTargetedBlock.selectedBlock.GetPosition()) > Patches.maxUseDistance)
-            {
-                utils.ShowMessage("Tether Broke!",
-                    $"You Moved More Than {Patches.maxUseDistance}m from tethered block.");
-                GetTargetedBlock.selectedBlock = null;
-                GetTargetedBlock.selectedObject = null;
-                return;
+                {
+                    utils.ShowMessage("Tether Broke!",
+                        $"You Moved More Than {Patches.maxUseDistance}m from tethered block.");
+                    GetTargetedBlock.selectedBlock = null;
+                    GetTargetedBlock.selectedObject = null;
+                    return;
+                }
             }
 
             var equippedTool = MySession.Static.LocalCharacter.HandItemDefinition;
+            bool isWelderEquipped = false;
             if (equippedTool != null)
             {
                 var toolName = equippedTool.Id.SubtypeName;
                 if (toolName.Contains("Welder", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (localPlayer.BuildPlanner.Count == 0)
+                    isWelderEquipped = true;
+                    if (GetTargetedBlock.selectedBlock != null && MySession.Static.LocalCharacter.BuildPlanner.Count > 0)
                     {
-                        return;
+                        DoWelder(MySession.Static.LocalCharacter);
                     }
-                    DoWelder(localPlayer);
-                    return;
                 }
-                if (toolName.Contains("Grinder", StringComparison.OrdinalIgnoreCase))
+                else if (toolName.Contains("Grinder", StringComparison.OrdinalIgnoreCase))
                 {
-                    DoGrinder();
-                    return;
+                    Grnd2Loot.DoGrinder();
                 }
-                if (toolName.Contains("Drill", StringComparison.OrdinalIgnoreCase))
+                else if (toolName.Contains("Drill", StringComparison.OrdinalIgnoreCase))
                 {
                     DoDrill();
-                    return;
                 }
+            }
+
+            if (GetTargetedBlock.selectedBlock != null && !isWelderEquipped && MyAPIGateway.Input.IsKeyPress(MyKeys.Control))
+            {
+                DoDeposit();
             }
         }
 
@@ -91,55 +91,100 @@ namespace TetherSE
             return;
         }
 
-        public static void DoGrinder()
+        public static void DoDeposit()
         {
-            var caster = MySession.Static.LocalCharacter.EquippedTool?.Components?.Get<MyCasterComponent>();
-            var hitSlimBlock = caster?.HitBlock;
-
-            // Only loot if actively grinding
-            if (MyAPIGateway.Input.IsLeftMousePressed() && hitSlimBlock != null && hitSlimBlock.FatBlock is IMyTerminalBlock terminalBlock && terminalBlock.HasInventory)
+            if (GetTargetedBlock.selectedBlock == null)
             {
-                var groundInventory = (MyInventory)terminalBlock.GetInventory();
-                var playerInventory = MySession.Static.LocalCharacter.GetInventory();
-                var items = new List<MyPhysicalInventoryItem>(groundInventory.GetItems());
+                return;
+            }
 
-                foreach (var item in items)
+            var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
+            var playerInventory = MySession.Static.LocalCharacter.GetInventory();
+            var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
+
+            var toolTypes = new List<string> { "Welder", "Grinder", "Drill" };
+            var toolTiers = new List<string> { "Elite", "Proficient", "Enhanced" }; // Highest to lowest
+
+            var bestTools = new Dictionary<string, MyPhysicalInventoryItem>();
+
+            // Find the best tool of each type
+            foreach (var item in items)
+            {
+                var subtypeName = item.Content.SubtypeName;
+                foreach (var toolType in toolTypes)
                 {
-                    var contentId = item.Content.GetObjectId();
-                    if (contentId.TypeId.IsNull) continue;
+                    if (subtypeName.Contains(toolType))
+                    {
+                        if (!bestTools.ContainsKey(toolType))
+                        {
+                            bestTools[toolType] = item;
+                        }
+                        else
+                        {
+                            var existingTool = bestTools[toolType];
+                            var existingTier = toolTiers.Count;
+                            var currentTier = toolTiers.Count;
 
-                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
-                    MyInventory.TransferByPlanner(groundInventory, playerInventory, contentId, MyItemFlags.None, item.Amount);
-                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
+                            for (int i = 0; i < toolTiers.Count; i++)
+                            {
+                                if (existingTool.Content.SubtypeName.Contains(toolTiers[i]))
+                                {
+                                    existingTier = i;
+                                    break;
+                                }
+                            }
+
+                            for (int i = 0; i < toolTiers.Count; i++)
+                            {
+                                if (subtypeName.Contains(toolTiers[i]))
+                                {
+                                    currentTier = i;
+                                    break;
+                                }
+                            }
+
+                            if (currentTier < existingTier)
+                            {
+                                bestTools[toolType] = item;
+                            }
+                        }
+                    }
                 }
             }
 
-            // Only deposit if holding control
-            if (MyAPIGateway.Input.IsKeyPress(MyKeys.LeftControl) || MyAPIGateway.Input.IsKeyPress(MyKeys.RightControl))
+            var itemsToKeep = new HashSet<uint>();
+            foreach(var item in bestTools.Values)
             {
-                var tetheredInventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
-                var playerInv = MySession.Static.LocalCharacter.GetInventory();
-                var playerItems = new List<MyPhysicalInventoryItem>(playerInv.GetItems());
+                itemsToKeep.Add(item.ItemId);
+            }
 
-                foreach (var item in playerItems)
+            foreach (var item in items)
+            {
+                var amountToTransfer = item.Amount;
+                if (itemsToKeep.Contains(item.ItemId))
+                {
+                    amountToTransfer = amountToTransfer - (MyFixedPoint)1;
+                }
+
+                if (amountToTransfer > 0)
                 {
                     var contentId = item.Content.GetObjectId();
                     if (contentId.TypeId.IsNull) continue;
 
-                    var typeIdString = contentId.ToString().ToLower();
-
-                    if (!typeIdString.Contains("ore") &&
-                        !typeIdString.Contains("ingot") &&
-                        !typeIdString.Contains("component")) continue;
-
                     MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
-                    MyInventory.TransferByPlanner(playerInv, tetheredInventory, contentId, MyItemFlags.None, item.Amount);
+                    MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, amountToTransfer);
                     MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
                 }
             }
         }
+
         public static void DoDrill()
         {
+            if (GetTargetedBlock.selectedBlock == null)
+            {
+                return;
+            }
+
             var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
             var playerInventory = MySession.Static.LocalCharacter.GetInventory();
             var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
