@@ -22,6 +22,7 @@ namespace TetherSE
 {
     class Tether
     {
+        public static int ticks = 0;
 
         public static void Update()
         {
@@ -79,7 +80,7 @@ namespace TetherSE
 
             if (GetTargetedBlock.selectedBlock != null && !isWelderEquipped && MyAPIGateway.Input.IsKeyPress(MyKeys.Control))
             {
-                DoDeposit();
+                InventoryManager.DoDeposit();
             }
         }
 
@@ -89,93 +90,6 @@ namespace TetherSE
             Reflections.Withdraw.Invoke(null, new object[] { (MyEntity)GetTargetedBlock.selectedObject.Owner, localPlayer.GetInventory(0), null });
             Patches.UseObjectPatch(5f);
             return;
-        }
-
-        public static void DoDeposit()
-        {
-            if (GetTargetedBlock.selectedBlock == null)
-            {
-                return;
-            }
-
-            var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
-            var playerInventory = MySession.Static.LocalCharacter.GetInventory();
-            var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
-
-            var toolTypes = new List<string> { "Welder", "Grinder", "Drill" };
-            var toolTiers = new List<string> { "Elite", "Proficient", "Enhanced" }; // Highest to lowest
-
-            var bestTools = new Dictionary<string, MyPhysicalInventoryItem>();
-
-            // Find the best tool of each type
-            foreach (var item in items)
-            {
-                var subtypeName = item.Content.SubtypeName;
-                foreach (var toolType in toolTypes)
-                {
-                    if (subtypeName.Contains(toolType))
-                    {
-                        if (!bestTools.ContainsKey(toolType))
-                        {
-                            bestTools[toolType] = item;
-                        }
-                        else
-                        {
-                            var existingTool = bestTools[toolType];
-                            var existingTier = toolTiers.Count;
-                            var currentTier = toolTiers.Count;
-
-                            for (int i = 0; i < toolTiers.Count; i++)
-                            {
-                                if (existingTool.Content.SubtypeName.Contains(toolTiers[i]))
-                                {
-                                    existingTier = i;
-                                    break;
-                                }
-                            }
-
-                            for (int i = 0; i < toolTiers.Count; i++)
-                            {
-                                if (subtypeName.Contains(toolTiers[i]))
-                                {
-                                    currentTier = i;
-                                    break;
-                                }
-                            }
-
-                            if (currentTier < existingTier)
-                            {
-                                bestTools[toolType] = item;
-                            }
-                        }
-                    }
-                }
-            }
-
-            var itemsToKeep = new HashSet<uint>();
-            foreach(var item in bestTools.Values)
-            {
-                itemsToKeep.Add(item.ItemId);
-            }
-
-            foreach (var item in items)
-            {
-                var amountToTransfer = item.Amount;
-                if (itemsToKeep.Contains(item.ItemId))
-                {
-                    amountToTransfer = amountToTransfer - (MyFixedPoint)1;
-                }
-
-                if (amountToTransfer > 0)
-                {
-                    var contentId = item.Content.GetObjectId();
-                    if (contentId.TypeId.IsNull) continue;
-
-                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
-                    MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, amountToTransfer);
-                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
-                }
-            }
         }
 
         public static void DoDrill()
@@ -201,6 +115,5 @@ namespace TetherSE
                 MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
             }
         }
-        public static int ticks = 0;
     }
 }

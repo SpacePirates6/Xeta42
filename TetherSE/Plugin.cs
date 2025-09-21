@@ -22,13 +22,10 @@ namespace TetherSE
 
         public void Update()
         {
-
-            Tether.Update();    
-            
+            Tether.Update();
+            LootManager.Update();
         }
 
 
     }
 }
-
-

@@ -93,6 +93,8 @@
     <Compile Include="Reflections.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Grnd2Loot.cs" />
+    <Compile Include="InventoryManager.cs" />
+    <Compile Include="LootManager.cs" />
     <Compile Include="Tether.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
