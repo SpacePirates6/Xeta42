@@ -16,6 +16,7 @@ using VRage.Game;
 using VRageMath;
 using Sandbox.Game.EntityComponents;
 using Sandbox.Game.Entities.Cube;
+using System.Globalization;
 
 
 namespace TetherSE
@@ -41,6 +42,13 @@ namespace TetherSE
                     MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
                     MyInventory.TransferByPlanner(groundInventory, playerInventory, contentId, MyItemFlags.None, item.Amount);
                     MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
+
+                    string sourceName = terminalBlock.DisplayNameText;
+                    string destinationName = MySession.Static.LocalCharacter.DisplayName;
+                    string itemName = item.Content.SubtypeName;
+                    string quantity = Math.Round((float)item.Amount, 1).ToString("F1", CultureInfo.InvariantCulture);
+
+                    LootDisplay.AddMessage($"({sourceName}) ------> {itemName} ({quantity}) to ({destinationName})", Color.Green);
                 }
             }
         }

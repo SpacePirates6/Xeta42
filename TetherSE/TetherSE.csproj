@@ -96,6 +96,7 @@
     <Compile Include="InventoryManager.cs" />
     <Compile Include="LootManager.cs" />
     <Compile Include="Tether.cs" />
+    <Compile Include="LootDisplay.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="AfterBuild">

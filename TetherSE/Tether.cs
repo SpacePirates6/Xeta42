@@ -17,6 +17,7 @@ using VRageMath;
 using VRage;
 using Sandbox.Game.EntityComponents;
 using VRage.Input;
+using System.Globalization;
 
 namespace TetherSE
 {
