@@ -10,6 +10,7 @@ using VRage.Game.ModAPI;
 using Sandbox.ModAPI.Weapons;
 using VRage.Game;
 using VRage.Game.ModAPI.Ingame;
+using System.Globalization;
 
 namespace TetherSE
 {
@@ -17,6 +18,15 @@ namespace TetherSE
     {
         private static int ticks = 0;
         private const int LOOT_RADIUS = 15;
+
+        private static string FormatQuantity(float amount)
+        {
+            if (amount >= 1000)
+            {
+                return $"{Math.Round(amount / 1000f, 2)}k";
+            }
+            return Math.Round(amount, 1).ToString("F1", CultureInfo.InvariantCulture);
+        }
 
         public static void Update()
         {
@@ -52,23 +62,40 @@ namespace TetherSE
                 {
                     MyAPIGateway.Utilities.ShowNotification($"TetherSE: Taking floating object: {floatingObject.GetType().Name}", 1000, "Green");
                     (playerInventoryConcrete as MyInventory).TakeFloatingObject(floatingObject);
+
+                    string sourceName = "World"; // Floating objects are from the world
+                    string destinationName = "user";
+                    string itemName = floatingObject.Item.Content.SubtypeName;
+                    string quantity = FormatQuantity((float)floatingObject.Item.Amount);
+
+                    LootDisplay.AddMessage($"({sourceName}) ------> {itemName} ({quantity}) to ({destinationName})", Color.Red);
                     continue;
                 }
 
                 if (entity.HasInventory)
                 {
-                    VRage.Game.ModAPI.IMyInventory sourceInventory = (VRage.Game.ModAPI.IMyInventory)entity.GetInventory();
-                    if (sourceInventory != null && sourceInventory.ItemCount > 0)
+                    // Only loot containers if Control is held down
+                    if (MyAPIGateway.Input.IsKeyPress(VRage.Input.MyKeys.LeftControl) || MyAPIGateway.Input.IsKeyPress(VRage.Input.MyKeys.RightControl))
                     {
-                        MyAPIGateway.Utilities.ShowNotification($"TetherSE: Transferring from {entity.GetType().Name} ({sourceInventory.ItemCount} items)", 1000, "Green");
-                        List<VRage.Game.ModAPI.Ingame.MyInventoryItem> items = new List<VRage.Game.ModAPI.Ingame.MyInventoryItem>();
-                        sourceInventory.GetItems(items);
-                        for (int i = items.Count - 1; i >= 0; i--)
+                        VRage.Game.ModAPI.IMyInventory sourceInventory = (VRage.Game.ModAPI.IMyInventory)entity.GetInventory();
+                        if (sourceInventory != null && sourceInventory.ItemCount > 0)
                         {
-                            MyAPIGateway.Utilities.ShowNotification($"TetherSE: Attempting to transfer item {i}", 1000, "Yellow");
-                            sourceInventory.TransferItemTo((VRage.Game.ModAPI.IMyInventory)playerInventoryConcrete, i, stackIfPossible: true, checkConnection: false);
+                            LootDisplay.AddMessage($"Transferring from {entity.GetType().Name} ({FormatQuantity((float)sourceInventory.ItemCount)} items)", Color.White);
+                            List<VRage.Game.ModAPI.Ingame.MyInventoryItem> items = new List<VRage.Game.ModAPI.Ingame.MyInventoryItem>();
+                            sourceInventory.GetItems(items);
+                            for (int i = items.Count - 1; i >= 0; i--)
+                            {
+                                var itemToTransfer = items[i];
+                                string sourceName = entity.DisplayName ?? entity.GetType().Name;
+                                string destinationName = "user";
+                                string itemName = itemToTransfer.Type.SubtypeId;
+                                string quantity = FormatQuantity((float)itemToTransfer.Amount);
+
+                                sourceInventory.TransferItemTo((VRage.Game.ModAPI.IMyInventory)playerInventoryConcrete, i, stackIfPossible: true, checkConnection: false);
+                                LootDisplay.AddMessage($"({sourceName}) ------> {itemName} ({quantity}) to ({destinationName})", Color.Red);
+                            }
+                            LootDisplay.AddMessage("Transfer complete", Color.White);
                         }
-                        MyAPIGateway.Utilities.ShowNotification("TetherSE: Transfer complete", 1000, "Green");
                     }
                 }
             }
