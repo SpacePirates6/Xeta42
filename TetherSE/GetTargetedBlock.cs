@@ -72,7 +72,7 @@ namespace TetherSE
 
                 foreach (var useableObject in useableObjects)
                 {
-                    if (useableObject.PrimaryAction == UseActionEnum.OpenInventory)
+                    if (useableObject.PrimaryAction == UseActionEnum.OpenInventory && useableObject.Owner != null)
                     {
                         utils.ShowNotification($"Tethered to {terminalBlock.CustomName}", 5000, "White");
                         selectedBlock = terminalBlock;

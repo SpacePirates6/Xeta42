@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using Sandbox.ModAPI;
 using VRage.Game;
 using VRage.Game.Components;
@@ -47,7 +48,40 @@ namespace TetherSE
 
         public static void AddMessage(string message, Color color)
         {
-            // Increment age of existing messages
+            string pattern = @"^\((.*)\) ------> (.*) \((\d+)\) to \((.*)\)$";
+            Match newMatch = Regex.Match(message, pattern);
+
+            if (newMatch.Success)
+            {
+                string newSourceName = newMatch.Groups[1].Value;
+                string newItemName = newMatch.Groups[2].Value;
+                int newQuantity = int.Parse(newMatch.Groups[3].Value);
+                string newDestinationName = newMatch.Groups[4].Value;
+
+                for (int i = 0; i < messages.Count; i++)
+                {
+                    var msg = messages[i];
+                    Match oldMatch = Regex.Match(msg.Message, pattern);
+
+                    if (oldMatch.Success)
+                    {
+                        string oldSourceName = oldMatch.Groups[1].Value;
+                        string oldItemName = oldMatch.Groups[2].Value;
+                        int oldQuantity = int.Parse(oldMatch.Groups[3].Value);
+                        string oldDestinationName = oldMatch.Groups[4].Value;
+
+                        if (newItemName == oldItemName && newSourceName == oldSourceName && newDestinationName == oldDestinationName)
+                        {
+                            int totalQuantity = oldQuantity + newQuantity;
+                            messages.RemoveAt(i);
+                            _targetScrollOffset += LINE_HEIGHT_NORMALIZED;
+                            message = $"({newSourceName}) ------> {newItemName} ({totalQuantity}) to ({newDestinationName})";
+                            break;
+                        }
+                    }
+                }
+            }
+
             foreach (var msg in messages)
             {
                 msg.Age++;
@@ -55,17 +89,16 @@ namespace TetherSE
 
             messages.Add(new LogMessage(message, color));
             
-            // Remove messages that are too old (fully faded)
-            messages.RemoveAll(msg => msg.Age >= FADE_THRESHOLD);
+            int removedCount = messages.RemoveAll(msg => msg.Age >= FADE_THRESHOLD);
+            _targetScrollOffset += removedCount * LINE_HEIGHT_NORMALIZED;
 
-            // Ensure we don't exceed MAX_MESSAGES visible at full opacity + FADE_THRESHOLD for fading messages
             while (messages.Count > MAX_MESSAGES + FADE_THRESHOLD)
             {
                 messages.RemoveAt(0);
+                _targetScrollOffset += LINE_HEIGHT_NORMALIZED;
             }
 
-            // Trigger scrolling animation
-            _targetScrollOffset -= LINE_HEIGHT_NORMALIZED; // Move up by one line height
+            _targetScrollOffset -= LINE_HEIGHT_NORMALIZED;
             _isScrolling = true;
         }
 

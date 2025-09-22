@@ -34,77 +34,75 @@ namespace TetherSE
 
         public static void DoDeposit()
         {
-            if (GetTargetedBlock.selectedBlock == null)
-            {
-                return;
-            }
+            if (GetTargetedBlock.selectedBlock == null) return;
 
             var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
             var playerInventory = MySession.Static.LocalCharacter.GetInventory();
             var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
 
             var toolTypes = new List<string> { "Welder", "Grinder", "Drill" };
-            var toolTiers = new List<string> { "Elite", "Proficient", "Enhanced" }; // Highest to lowest
+            var toolTiers = new Dictionary<string, int> {
+                { "Elite", 0 },
+                { "Proficient", 1 },
+                { "Enhanced", 2 }
+            };
+            int defaultTier = 3;
 
-            var bestTools = new Dictionary<string, MyPhysicalInventoryItem>();
+            var bestTools = new Dictionary<string, Tuple<MyPhysicalInventoryItem, int>>();
 
-            // Find the best tool of each type
+            // Find best tools
             foreach (var item in items)
             {
                 var subtypeName = item.Content.SubtypeName;
+                string matchedToolType = null;
                 foreach (var toolType in toolTypes)
                 {
                     if (subtypeName.Contains(toolType))
                     {
-                        if (!bestTools.ContainsKey(toolType))
+                        matchedToolType = toolType;
+                        break;
+                    }
+                }
+
+                if (matchedToolType != null)
+                {
+                    int currentTier = defaultTier;
+                    foreach (var tier in toolTiers)
+                    {
+                        if (subtypeName.Contains(tier.Key))
                         {
-                            bestTools[toolType] = item;
+                            currentTier = tier.Value;
+                            break;
                         }
-                        else
-                        {
-                            var existingTool = bestTools[toolType];
-                            var existingTier = toolTiers.Count;
-                            var currentTier = toolTiers.Count;
+                    }
 
-                            for (int i = 0; i < toolTiers.Count; i++)
-                            {
-                                if (existingTool.Content.SubtypeName.Contains(toolTiers[i]))
-                                {
-                                    existingTier = i;
-                                    break;
-                                }
-                            }
-
-                            for (int i = 0; i < toolTiers.Count; i++)
-                            {
-                                if (subtypeName.Contains(toolTiers[i]))
-                                {
-                                    currentTier = i;
-                                    break;
-                                }
-                            }
-
-                            if (currentTier < existingTier)
-                            {
-                                bestTools[toolType] = item;
-                            }
-                        }
+                    if (!bestTools.ContainsKey(matchedToolType) || currentTier < bestTools[matchedToolType].Item2)
+                    {
+                        bestTools[matchedToolType] = Tuple.Create(item, currentTier);
                     }
                 }
             }
 
             var itemsToKeep = new HashSet<uint>();
-            foreach(var item in bestTools.Values)
+            foreach (var bestTool in bestTools.Values)
             {
-                itemsToKeep.Add(item.ItemId);
+                itemsToKeep.Add(bestTool.Item1.ItemId);
             }
+
+            // Find hydrogen bottle to keep
+            var hydrogenBottle = items.FirstOrDefault(i => i.Content.SubtypeName.Contains("HydrogenBottle"));
+            if (hydrogenBottle.Content != null)
+            {
+                itemsToKeep.Add(hydrogenBottle.ItemId);
+            }
+
 
             foreach (var item in items)
             {
                 var amountToTransfer = item.Amount;
                 if (itemsToKeep.Contains(item.ItemId))
                 {
-                    amountToTransfer = amountToTransfer - (MyFixedPoint)1;
+                    amountToTransfer -= 1;
                 }
 
                 if (amountToTransfer > 0)
@@ -112,9 +110,7 @@ namespace TetherSE
                     var contentId = item.Content.GetObjectId();
                     if (contentId.TypeId.IsNull) continue;
 
-                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
                     MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, amountToTransfer);
-                    MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
 
                     string sourceName = "user";
                     string destinationName = GetTargetedBlock.selectedBlock.DisplayNameText;
