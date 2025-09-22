@@ -17,21 +17,11 @@ using VRageMath;
 using VRage;
 using Sandbox.Game.EntityComponents;
 using VRage.Input;
-using System.Globalization;
 
 namespace TetherSE
 {
     class InventoryManager
     {
-        private static string FormatQuantity(float amount)
-        {
-            if (amount >= 1000)
-            {
-                return $"{Math.Round(amount / 1000f, 2)}k";
-            }
-            return Math.Round(amount, 1).ToString("F1", CultureInfo.InvariantCulture);
-        }
-
         public static void DoDeposit()
         {
             if (GetTargetedBlock.selectedBlock == null)
@@ -115,13 +105,6 @@ namespace TetherSE
                     MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10000;
                     MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, amountToTransfer);
                     MyConstants.DEFAULT_INTERACTIVE_DISTANCE = 10;
-
-                    string sourceName = "user";
-                    string destinationName = GetTargetedBlock.selectedBlock.DisplayNameText;
-                    string itemName = item.Content.SubtypeName;
-                    string quantity = FormatQuantity((float)amountToTransfer);
-
-                    LootDisplay.AddMessage($"({sourceName}) ------> {itemName} ({quantity}) to ({destinationName})", Color.Green);
                 }
             }
         }
