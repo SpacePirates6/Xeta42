@@ -37,7 +37,11 @@ namespace TetherSE
             if (GetTargetedBlock.selectedBlock == null) return;
 
             var inventory = (MyInventory)GetTargetedBlock.selectedBlock.GetInventory();
-            var playerInventory = MySession.Static.LocalCharacter.GetInventory();
+            if (inventory == null) return; // Ensure the targeted block has an inventory
+
+            var playerInventory = MySession.Static.LocalCharacter?.GetInventory(); // Use null-conditional operator
+            if (playerInventory == null) return; // Ensure the player has an inventory
+
             var items = new List<MyPhysicalInventoryItem>(playerInventory.GetItems());
 
             var toolTypes = new List<string> { "Welder", "Grinder", "Drill" };
@@ -97,28 +101,35 @@ namespace TetherSE
             }
 
 
+            // Create a list of items to transfer (excluding items to keep)
+            var itemsToTransfer = new List<MyPhysicalInventoryItem>();
             foreach (var item in items)
             {
+                if (!itemsToKeep.Contains(item.ItemId))
+                {
+                    itemsToTransfer.Add(item);
+                }
+            }
+
+            // Transfer items from player inventory to target inventory
+            foreach (var item in itemsToTransfer)
+            {
                 var amountToTransfer = item.Amount;
-                if (itemsToKeep.Contains(item.ItemId))
-                {
-                    amountToTransfer -= 1;
-                }
+                var contentId = item.Content?.GetObjectId();
 
-                if (amountToTransfer > 0)
-                {
-                    var contentId = item.Content.GetObjectId();
-                    if (contentId.TypeId.IsNull) continue;
+                if (contentId == null || contentId.Value.TypeId.IsNull) continue;
 
-                    MyInventory.TransferByPlanner(playerInventory, inventory, contentId, MyItemFlags.None, amountToTransfer);
+                // Remove from player inventory
+                playerInventory.Remove(item, amountToTransfer);
 
-                    string sourceName = "user";
-                    string destinationName = GetTargetedBlock.selectedBlock.DisplayNameText;
-                    string itemName = item.Content.SubtypeName;
-                    string quantity = FormatQuantity((float)amountToTransfer);
+                // Add to target inventory (should stack automatically)
+                inventory.AddItems(amountToTransfer, item.Content);
 
-                    LootDisplay.AddMessage($"({sourceName}) ------> {itemName} ({quantity}) to ({destinationName})", Color.Green);
-                }
+                string sourceName = "user";
+                string destinationName = GetTargetedBlock.selectedBlock.DisplayNameText;
+                string itemName = item.Content.SubtypeName;
+
+                LootDisplay.AddMessage(itemName, (float)amountToTransfer, sourceName, destinationName, Color.LimeGreen);
             }
         }
     }

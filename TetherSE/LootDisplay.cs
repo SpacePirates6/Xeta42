@@ -1,160 +1,278 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Text.RegularExpressions;
 using Sandbox.ModAPI;
-using VRage.Game;
 using VRage.Game.Components;
-using VRage.Game.Gui; 
+using VRage.Game; // For MyFontEnum
 using VRage.Utils;
 using VRageMath;
-using Sandbox.Graphics; 
+using VRage.Input;
+using Sandbox.Graphics; // For MyGuiManager
+using System.Xml.Serialization; // Added for XML serialization
+using System.IO; // Added for file operations
+using System.Linq; // Added for LINQ operations
 
 namespace TetherSE
 {
+    public class LootDisplaySettings
+    {
+        public Vector2 Position { get; set; } = new Vector2(0.7027421f, 0.15f);
+    }
+
     [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
-    public class LootDisplay : MySessionComponentBase
+    public class LootDisplay : MySessionComponentBase // Added comment to force recompile
     {
         private class LogMessage
         {
-            public string Message { get; set; }
+            public string ItemName { get; set; }
+            public float Quantity { get; set; }
+            public string SourceName { get; set; }
+            public string DestinationName { get; set; }
             public Color Color { get; set; }
-            public int Age { get; set; } // New property to track message age
+            public int CurrentFadeTicks { get; set; }
+            public int MaxFadeTicks { get; set; }
 
-            public LogMessage(string message, Color color)
+            public string Message => $"({SourceName}) ------> {ItemName} ({FormatQuantity(Quantity)}) to ({DestinationName})";
+
+            public LogMessage(string itemName, float quantity, string sourceName, string destinationName, Color color, int maxFadeTicks)
             {
-                Message = message;
+                ItemName = itemName;
+                Quantity = quantity;
+                SourceName = sourceName;
+                DestinationName = destinationName;
                 Color = color;
-                Age = 0; // New messages start with age 0
+                MaxFadeTicks = maxFadeTicks;
+                CurrentFadeTicks = maxFadeTicks;
+            }
+
+            private string FormatQuantity(float amount)
+            {
+                if (amount >= 1000)
+                {
+                    return $"{Math.Round(amount / 1000f, 2)}k";
+                }
+                return Math.Round(amount, 1).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
             }
         }
 
         private static List<LogMessage> messages = new List<LogMessage>();
         private const int MAX_MESSAGES = 10;
-        private const int FADE_THRESHOLD = 5; // Messages will fade out over 5 new messages
         private const float TEXT_SCALE = 0.8f;
         
+        // Constants for fade time calculation
+        private const int BASE_FADE_TICKS = 180; // 3 seconds at 60 ticks/sec
+        private const int TICKS_PER_QUANTITY_UNIT = 10; // 0.1 seconds per unit of quantity
+        private const int MIN_FADE_TICKS = 60; // Minimum fade time of 1 second
+
         // Scrolling animation fields
         private static float _currentScrollOffset = 0f;
         private static float _targetScrollOffset = 0f;
         private const float SCROLL_SPEED = 0.005f; // Normalized units per update
         private static bool _isScrolling = false;
 
-        // Start position as a percentage of the screen (normalized coordinates)
-        private static Vector2 startPositionNormalized = new Vector2(0.01f, 0.1f); 
-        
-        // Line height as a percentage of the screen height
+        // Display position and size fields (normalized coordinates)
+        public static Vector2 startPositionNormalized; 
         private const float LINE_HEIGHT_NORMALIZED = 0.025f; 
 
-        public static void AddMessage(string message, Color color)
+        // Toggling and Movement fields
+        private const MyKeys TOGGLE_KEY = MyKeys.F2;
+        private static bool _displayEnabled = true;
+        private static bool _toggleKeyPressedLastFrame = false;
+
+        private const string SETTINGS_FILE_NAME = "LootDisplaySettings.xml";
+        private static LootDisplaySettings _settings = new LootDisplaySettings();
+
+        /// <summary>
+        /// Sets the starting position of the loot display using normalized screen coordinates.
+        /// </summary>
+        /// <param name="newPosition">The new top-left position (0,0 is top-left, 1,1 is bottom-right).</param>
+        public static void SetStartPosition(Vector2 newPosition)
         {
-            string pattern = @"^\((.*)\) ------> (.*) \((\d+)\) to \((.*)\)$";
-            Match newMatch = Regex.Match(message, pattern);
+            _settings.Position = newPosition;
+            SaveSettings(); // Save settings immediately after changing position
+        }
 
-            if (newMatch.Success)
+        private static void SaveSettings()
+        {
+            try
             {
-                string newSourceName = newMatch.Groups[1].Value;
-                string newItemName = newMatch.Groups[2].Value;
-                int newQuantity = int.Parse(newMatch.Groups[3].Value);
-                string newDestinationName = newMatch.Groups[4].Value;
-
-                for (int i = 0; i < messages.Count; i++)
+                using (TextWriter writer = MyAPIGateway.Utilities.WriteFileInLocalStorage(SETTINGS_FILE_NAME, typeof(LootDisplay)))
                 {
-                    var msg = messages[i];
-                    Match oldMatch = Regex.Match(msg.Message, pattern);
+                    XmlSerializer serializer = new XmlSerializer(typeof(LootDisplaySettings));
+                    serializer.Serialize(writer, _settings);
+                }
+            }
+            catch (Exception e)
+            {
+                MyAPIGateway.Utilities.ShowMessage("Error", $"Failed to save LootDisplay settings: {e.Message}");
+            }
+        }
 
-                    if (oldMatch.Success)
+        private static void LoadSettings()
+        {
+            try
+            {
+                if (MyAPIGateway.Utilities.FileExistsInLocalStorage(SETTINGS_FILE_NAME, typeof(LootDisplay)))
+                {
+                    using (TextReader reader = MyAPIGateway.Utilities.ReadFileInLocalStorage(SETTINGS_FILE_NAME, typeof(LootDisplay)))
                     {
-                        string oldSourceName = oldMatch.Groups[1].Value;
-                        string oldItemName = oldMatch.Groups[2].Value;
-                        int oldQuantity = int.Parse(oldMatch.Groups[3].Value);
-                        string oldDestinationName = oldMatch.Groups[4].Value;
-
-                        if (newItemName == oldItemName && newSourceName == oldSourceName && newDestinationName == oldDestinationName)
-                        {
-                            int totalQuantity = oldQuantity + newQuantity;
-                            messages.RemoveAt(i);
-                            _targetScrollOffset += LINE_HEIGHT_NORMALIZED;
-                            message = $"({newSourceName}) ------> {newItemName} ({totalQuantity}) to ({newDestinationName})";
-                            break;
-                        }
+                        XmlSerializer serializer = new XmlSerializer(typeof(LootDisplaySettings));
+                        _settings = (LootDisplaySettings)serializer.Deserialize(reader);
                     }
                 }
             }
-
-            foreach (var msg in messages)
+            catch (Exception e)
             {
-                msg.Age++;
+                MyAPIGateway.Utilities.ShowMessage("Error", $"Failed to load LootDisplay settings: {e.Message}");
+                _settings = new LootDisplaySettings(); // Revert to default on error
+            }
+            startPositionNormalized = _settings.Position; // Apply loaded position
+        }
+
+        public static void AddMessage(string itemName, float quantity, string sourceName, string destinationName, Color color)
+        {
+            int maxFadeTicks = Math.Max(MIN_FADE_TICKS, BASE_FADE_TICKS + (int)(quantity * TICKS_PER_QUANTITY_UNIT));
+
+            // Try to find an existing message for the same item and transfer direction
+            LogMessage existingMessage = messages.FirstOrDefault(m => 
+                m.ItemName == itemName && 
+                m.SourceName == sourceName && 
+                m.DestinationName == destinationName);
+
+            if (existingMessage != null)
+            {
+                existingMessage.Quantity += quantity;
+                existingMessage.MaxFadeTicks = Math.Max(MIN_FADE_TICKS, BASE_FADE_TICKS + (int)(existingMessage.Quantity * TICKS_PER_QUANTITY_UNIT));
+                existingMessage.CurrentFadeTicks = existingMessage.MaxFadeTicks; // Reset fade
+                existingMessage.Color = color; // Update color in case it changed
+            }
+            else
+            {
+                // Remove oldest messages if exceeding max
+                while (messages.Count >= MAX_MESSAGES)
+                {
+                    messages.RemoveAt(0);
+                }
+
+                messages.Add(new LogMessage(itemName, quantity, sourceName, destinationName, color, maxFadeTicks));
             }
 
-            messages.Add(new LogMessage(message, color));
-            
-            int removedCount = messages.RemoveAll(msg => msg.Age >= FADE_THRESHOLD);
-            _targetScrollOffset += removedCount * LINE_HEIGHT_NORMALIZED;
-
-            while (messages.Count > MAX_MESSAGES + FADE_THRESHOLD)
+            // Trigger scroll animation to show the new message
+            if (messages.Count > MAX_MESSAGES)
             {
-                messages.RemoveAt(0);
-                _targetScrollOffset += LINE_HEIGHT_NORMALIZED;
+                _targetScrollOffset = -(messages.Count - MAX_MESSAGES) * LINE_HEIGHT_NORMALIZED;
             }
-
-            _targetScrollOffset -= LINE_HEIGHT_NORMALIZED;
+            else
+            {
+                _targetScrollOffset = 0f;
+            }
             _isScrolling = true;
+        }
+
+        public static void AddMessage(string message, Color color)
+        {
+            // Create a dummy LogMessage to utilize the existing display logic
+            // This message will not be merged with other item transfer messages
+            // and will fade out like other general messages.
+            AddMessage(message, 0f, "", "", color);
         }
 
         public override void UpdateAfterSimulation()
         {
             base.UpdateAfterSimulation();
 
-            if (_isScrolling)
+            // --- Handle Display Toggling ---
+            bool toggleKeyPressed = MyAPIGateway.Input.IsKeyPress(TOGGLE_KEY);
+            if (toggleKeyPressed && !_toggleKeyPressedLastFrame)
             {
-                // Move current scroll offset towards target scroll offset
-                if (_currentScrollOffset > _targetScrollOffset)
+                _displayEnabled = !_displayEnabled;
+            }
+            _toggleKeyPressedLastFrame = toggleKeyPressed;
+
+            if (!_displayEnabled)
+            {
+                return;
+            }
+
+            // --- Handle Message Fading ---
+            for (int i = messages.Count - 1; i >= 0; i--)
+            {
+                messages[i].CurrentFadeTicks--;
+                if (messages[i].CurrentFadeTicks <= 0)
                 {
-                    _currentScrollOffset -= SCROLL_SPEED;
-                    if (_currentScrollOffset <= _targetScrollOffset)
-                    {
-                        _currentScrollOffset = _targetScrollOffset;
-                        _isScrolling = false;
-                    }
-                }
-                else if (_currentScrollOffset < _targetScrollOffset)
-                {
-                    _currentScrollOffset += SCROLL_SPEED;
-                    if (_currentScrollOffset >= _targetScrollOffset)
-                    {
-                        _currentScrollOffset = _targetScrollOffset;
-                        _isScrolling = false;
-                    }
+                    messages.RemoveAt(i);
                 }
             }
+
+            // --- Handle Scrolling Animation ---
+            if (_isScrolling)
+            {
+                float difference = _targetScrollOffset - _currentScrollOffset;
+                if (Math.Abs(difference) < SCROLL_SPEED)
+                {
+                    _currentScrollOffset = _targetScrollOffset;
+                    _isScrolling = false;
+                }
+                else
+                {
+                    _currentScrollOffset += Math.Sign(difference) * SCROLL_SPEED;
+                }
+            }
+        }
+
+        private float GetDisplayWidthNormalized()
+        {
+            float maxWidth = 0f;
+            foreach (var msg in messages)
+            {
+                Vector2 stringSize = MyGuiManager.MeasureString(MyFontEnum.White, msg.Message, TEXT_SCALE);
+                if (stringSize.X > maxWidth)
+                {
+                    maxWidth = stringSize.X;
+                }
+            }
+            return maxWidth;
+        }
+
+        private float GetDisplayHeightNormalized()
+        {
+            return messages.Count * LINE_HEIGHT_NORMALIZED;
         }
 
         public override void Draw()
         {
             base.Draw();
 
-            if (messages.Count == 0) 
+            if (messages.Count == 0 || !_displayEnabled) 
                 return;
 
             try
             {
-                // The current position starts at our normalized offset, adjusted by current scroll offset
+                // Draw background
+                Vector2 displaySize = new Vector2(GetDisplayWidthNormalized(), GetDisplayHeightNormalized());
+                RectangleF backgroundRectF = new RectangleF(startPositionNormalized, displaySize);
+                Rectangle backgroundRect = new Rectangle(
+                    (int)(backgroundRectF.X * MyAPIGateway.Session.Camera.ViewportSize.X),
+                    (int)(backgroundRectF.Y * MyAPIGateway.Session.Camera.ViewportSize.Y),
+                    (int)(backgroundRectF.Width * MyAPIGateway.Session.Camera.ViewportSize.X),
+                    (int)(backgroundRectF.Height * MyAPIGateway.Session.Camera.ViewportSize.Y)
+                );
+                MyGuiManager.DrawSprite("SquareSimple", backgroundRect, new Color(0, 0, 0, 178), true, false, null);
+
                 Vector2 currentPosition = startPositionNormalized + new Vector2(0, _currentScrollOffset);
 
                 for (int i = 0; i < messages.Count; i++)
                 {
                     LogMessage logMsg = messages[i];
 
-                    // Calculate alpha based on age
-                    float alpha = 1f - ((float)logMsg.Age / FADE_THRESHOLD);
-                    if (alpha < 0) alpha = 0; // Ensure alpha doesn't go below 0
-                    if (alpha > 1) alpha = 1; // Ensure alpha doesn't go above 1
+                    // Calculate alpha for fade-out effect
+                    float alpha = (float)logMsg.CurrentFadeTicks / logMsg.MaxFadeTicks;
+                    alpha = MathHelper.Clamp(alpha, 0f, 1f);
 
-                    Color fadedColor = new Color(logMsg.Color.R, logMsg.Color.G, logMsg.Color.B, (byte)(logMsg.Color.A * alpha));
+                    Color fadedColor = new Color(logMsg.Color, alpha);
 
                     MyGuiManager.DrawString(
-                        font: MyFontEnum.White,
+                        font: MyFontEnum.Debug,
                         text: logMsg.Message,
                         normalizedCoord: currentPosition,
                         scale: TEXT_SCALE,
@@ -162,20 +280,38 @@ namespace TetherSE
                         drawAlign: MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_TOP 
                     );
                     
-                    // Move down for the next line using the normalized height
                     currentPosition.Y += LINE_HEIGHT_NORMALIZED; 
                 }
             }
             catch (Exception)
             {
-                // Catch potential rare exceptions during drawing
+                // Catch potential rare exceptions during drawing to prevent crashes
             }
+        }
+
+        public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
+        {
+            base.Init(sessionComponent);
+            LoadSettings();
         }
 
         protected override void UnloadData()
         {
+            SaveSettings(); // Save settings when mod unloads
             messages.Clear();
+            _currentScrollOffset = 0f; // Reset scroll offset on unload
+            _targetScrollOffset = 0f; // Reset target scroll offset on unload
+            _isScrolling = false; // Stop any ongoing scrolling
             base.UnloadData();
+        }
+
+        public override void LoadData()
+        {
+            base.LoadData();
+            LoadSettings();
+            _currentScrollOffset = 0f; // Reset scroll offset on load
+            _targetScrollOffset = 0f; // Reset target scroll offset on load
+            _isScrolling = false; // Stop any ongoing scrolling
         }
     }
 }

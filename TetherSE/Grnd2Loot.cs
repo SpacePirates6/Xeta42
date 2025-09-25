@@ -46,9 +46,8 @@ namespace TetherSE
                     string sourceName = terminalBlock.DisplayNameText;
                     string destinationName = MySession.Static.LocalCharacter.DisplayName;
                     string itemName = item.Content.SubtypeName;
-                    string quantity = Math.Round((float)item.Amount, 1).ToString("F1", CultureInfo.InvariantCulture);
 
-                    LootDisplay.AddMessage($"({sourceName}) ------> {itemName} ({quantity}) to ({destinationName})", Color.Green);
+                    LootDisplay.AddMessage(itemName, (float)item.Amount, sourceName, destinationName, Color.LimeGreen);
                 }
             }
         }
